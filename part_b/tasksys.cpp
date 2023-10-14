@@ -136,6 +136,7 @@ const char* TaskSystemParallelThreadPoolSleeping::name() {
 }
 
 void addToQueue(std::deque<std::pair<int, TaskID>>& q, TaskSystemParallelThreadPoolSleeping* task) {
+    //bool added_work = false;
     for (TaskID cur_task_id: task->cur_tasks) {
         runnableInfo runnable_info = task->runnables[cur_task_id];
         if (runnable_info.added_to_queue) {
@@ -150,6 +151,7 @@ void addToQueue(std::deque<std::pair<int, TaskID>>& q, TaskSystemParallelThreadP
             }
             //printf("can add value is %d\n", can_add);
             if (can_add) {
+                //added_work = true;
                 for (int i = 0; i < runnable_info.num_total_tasks; i++) {
                     q.push_back(std::make_pair(i, cur_task_id));
                 }
@@ -157,9 +159,12 @@ void addToQueue(std::deque<std::pair<int, TaskID>>& q, TaskSystemParallelThreadP
             }
         }
     }
+    /*if (!added_work) {
+        printf("didnt add any work to queue\n");
+    }*/
 }
 
-void threadTaskDistribute(TaskSystemParallelThreadPoolSleeping* task) {
+/*void threadTaskDistribute(TaskSystemParallelThreadPoolSleeping* task) {
     while (true) {
         lock.lock();
         while(!task->work_to_add) {
@@ -176,18 +181,24 @@ void threadTaskDistribute(TaskSystemParallelThreadPoolSleeping* task) {
         cv_thread.notify_all();
         lock.unlock();
     }
-}
+}*/
 
 void threadTaskSleep(TaskSystemParallelThreadPoolSleeping* task) {
     while (true) {
         lock.lock();
-        while (task->q.empty()) {
+        while (task->q.empty() || task->work_to_add) {
             if (task->done) {
                 lock.unlock();
                 return;
             }
-            //printf("thread waiting for work\n");
-            cv_thread.wait(lock);
+            if (task->work_to_add) {
+                addToQueue(task->q, task);
+                task->work_to_add = false;
+            }
+            if (task->q.empty()) {
+                //printf("thread waiting for work\n");
+                cv_thread.wait(lock);
+            }
         }
         std::pair<int, TaskID> task_info = task->q.front();
         int cur_task = task_info.first;
@@ -203,10 +214,9 @@ void threadTaskSleep(TaskSystemParallelThreadPoolSleeping* task) {
         if (task->runnables[cur_task_id].num_tasks_completed == task->runnables[cur_task_id].num_total_tasks) {
             task->cur_tasks.erase(cur_task_id);
             //printf("erasing task from set\n");
-            if (!task->cur_tasks.empty()) {
-                task->work_to_add = true;
-                cv_work.notify_one();
-            } else if (task->waiting_for_sync) {
+            task->work_to_add = true;
+            cv_thread.notify_all();
+            if (task->waiting_for_sync && task->q.empty()) {
                 //printf("all tasks done for now\n");
                 cv.notify_all();
             }
@@ -227,8 +237,8 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
     this->waiting_for_sync = false;
     this->work_to_add = false;
     this->threads = std::vector<std::thread>();
-    this->threads.push_back(std::thread(threadTaskDistribute, this));
-    for (int i = 1; i < this->num_threads; i++) {
+    //this->threads.push_back(std::thread(threadTaskDistribute, this));
+    for (int i = 0; i < this->num_threads; i++) {
         this->threads.push_back(std::thread(threadTaskSleep, this));
     }
 }
@@ -244,7 +254,7 @@ TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
     //printf("marking done\n");
     this->done = true;
     cv_thread.notify_all();
-    cv_work.notify_one();
+    //cv_work.notify_one();
     lock.unlock();
     for (int i = 0; i < this->num_threads; i++) {
         //printf("joining threads\n");
@@ -284,10 +294,13 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnabl
     };
     this->runnables[task_id] = runnable_info;
     this->cur_task_id += 1;
-    addToQueue(this->q, this);
+    if (deps.size() == 0 || this->cur_tasks.empty()) {
+        this->work_to_add = true;
+        cv_thread.notify_all();
+    }
+    //addToQueue(this->q, this);
     //printf("task_id %d assigned\n", task_id);
 
-    cv_thread.notify_all();
     lock.unlock();
     return task_id;
 }
@@ -301,7 +314,7 @@ void TaskSystemParallelThreadPoolSleeping::sync() {
     this->waiting_for_sync = true;
     while(!this->cur_tasks.empty()) {
         //printf("waiting for threads to finish tasks\n");
-        cv_thread.notify_all();
+        //cv_thread.notify_all();
         cv.wait(lock);
     }
     this->waiting_for_sync = false;
