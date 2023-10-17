@@ -152,7 +152,6 @@ TaskSystemParallelThreadPoolSpinning::TaskSystemParallelThreadPoolSpinning(int n
     // Implementations are free to add new class member variables
     // (requiring changes to tasksys.h).
     //
-    std::cout << "In constructor rn." << std::endl;
     this->progState = new ProgramState;
     this->killed = false;
     this->num_threads = num_threads;
@@ -161,10 +160,14 @@ TaskSystemParallelThreadPoolSpinning::TaskSystemParallelThreadPoolSpinning(int n
     {
         thread_pool[i] = std::thread(&TaskSystemParallelThreadPoolSpinning::spinningThread, this);
     }
-    std::cout << "Made the thread pool !" << std::endl;
 }
 
-TaskSystemParallelThreadPoolSpinning::~TaskSystemParallelThreadPoolSpinning() {}
+TaskSystemParallelThreadPoolSpinning::~TaskSystemParallelThreadPoolSpinning() {
+    killed = true;
+    for (int i = 0; i < num_threads; i++) {
+        thread_pool[i].join();
+    }
+}
 
 void TaskSystemParallelThreadPoolSpinning::run(IRunnable *runnable, int num_total_tasks)
 {
@@ -173,18 +176,14 @@ void TaskSystemParallelThreadPoolSpinning::run(IRunnable *runnable, int num_tota
     // method in Part A.  The implementation provided below runs all
     // tasks sequentially on the calling thread.
     //
-    std::cout << "In main rn." << std::endl;
     std::unique_lock<std::mutex> ulock(*(this->progState->finish_lock));
     this->progState->thread_pool_lock->lock();
-    std::cout << "Locked things!." << std::endl;
     this->progState->finished_tasks = 0;
     this->progState->remaining_tasks = num_total_tasks;
     this->progState->total_tasks = num_total_tasks;
     this->progState->runnable = runnable;
     this->progState->thread_pool_lock->unlock();
-    std::cout << "Unlock thread pool!." << std::endl;
     this->progState->finish_cv->wait(ulock);
-    std::cout << "Made it to the bottom of run" << std::endl;
     ulock.unlock();
 }
 
@@ -199,7 +198,6 @@ void TaskSystemParallelThreadPoolSpinning::spinningThread()
         this->progState->thread_pool_lock->lock();
         total = this->progState->total_tasks;
         id = total - this->progState->remaining_tasks;
-        std::cout << id << " tasks done " << total << std::endl;
         if (id < total)
             this->progState->remaining_tasks--;
         this->progState->thread_pool_lock->unlock();
