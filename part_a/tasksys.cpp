@@ -55,21 +55,43 @@ TaskSystemParallelSpawn::TaskSystemParallelSpawn(int num_threads): ITaskSystem(n
     // Implementations are free to add new class member variables
     // (requiring changes to tasksys.h).
     //
+    this->numThreads = num_threads;
+    this->threadPool = new std::thread[this->numThreads];
 }
 
 TaskSystemParallelSpawn::~TaskSystemParallelSpawn() {}
 
+//
+// Allow each thread to pick the next, or ith, task when they are done.
+//
+void TaskSystemParallelSpawn::runSingleThread(IRunnable* runnable, int num_total_tasks, std::mutex* lock, int* curTask) {
+    int nextTask = -1;
+    while (nextTask < num_total_tasks) {
+        // Have threads claim the next task, use lock to ensure that there's no race condition
+        lock->lock();
+        nextTask = *curTask;
+        *curTask += 1;
+        lock->unlock();
+        if (nextTask < num_total_tasks) {
+            runnable->runTask(nextTask, num_total_tasks);
+        }
+    }
+}
+
 void TaskSystemParallelSpawn::run(IRunnable* runnable, int num_total_tasks) {
-
-
     //
     // TODO: CS149 students will modify the implementation of this
     // method in Part A.  The implementation provided below runs all
     // tasks sequentially on the calling thread.
     //
-
-    for (int i = 0; i < num_total_tasks; i++) {
-        runnable->runTask(i, num_total_tasks);
+    std::mutex* lock = new std::mutex();
+    int* curr_task = new int;
+    *curr_task = 0;
+    for (int i = 0; i < this->numThreads; i++) {
+        this->threadPool[i] = std::thread(&TaskSystemParallelSpawn::runSingleThread, this, runnable, num_total_tasks, lock, curr_task);
+    }
+    for (int i = 0; i < this->numThreads; i++) {
+        this->threadPool[i].join();
     }
 }
 
