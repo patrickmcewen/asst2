@@ -240,7 +240,6 @@ void TaskSystemParallelThreadPoolSpinning::sync()
  * Parallel Thread Pool Sleeping Task System Implementation
  * ================================================================
  */
-
 const char *TaskSystemParallelThreadPoolSleeping::name()
 {
     return "Parallel + Thread Pool + Sleep";
@@ -254,6 +253,16 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
     // Implementations are free to add new class member variables
     // (requiring changes to tasksys.h).
     //
+    this->progState = new ProgramState;
+    this->killed = false;
+    this->num_threads = num_threads;
+    this->thread_pool = std::vector<std::thread>(num_threads);
+    this->newTaskCV = new std::condition_variable();
+    this->newTaskLock = new std::mutex();
+    for (int i = 0; i < num_threads; i++)
+    {
+        thread_pool[i] = std::thread(&TaskSystemParallelThreadPoolSleeping::sleepThread, this);
+    }
 }
 
 TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping()
@@ -264,6 +273,13 @@ TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping()
     // Implementations are free to add new class member variables
     // (requiring changes to tasksys.h).
     //
+    killed = true;
+    for (int i = 0; i < num_threads; i++) {
+        newTaskCV->notify_all();
+    }
+    for (int i = 0; i < num_threads; i++) {
+        thread_pool[i].join();
+    }
 }
 
 void TaskSystemParallelThreadPoolSleeping::run(IRunnable *runnable, int num_total_tasks)
@@ -274,12 +290,60 @@ void TaskSystemParallelThreadPoolSleeping::run(IRunnable *runnable, int num_tota
     // method in Parts A and B.  The implementation provided below runs all
     // tasks sequentially on the calling thread.
     //
+    std::unique_lock<std::mutex> ulock(*(this->progState->finish_lock));
+    this->progState->thread_pool_lock->lock();
+    this->progState->finished_tasks = 0;
+    this->progState->remaining_tasks = num_total_tasks;
+    this->progState->total_tasks = num_total_tasks;
+    this->progState->runnable = runnable;
+    this->progState->thread_pool_lock->unlock();
+    for (int i = 0; i < num_total_tasks; i++) {
+        this->newTaskCV->notify_all();
+    }
+    this->progState->finish_cv->wait(ulock);
+    ulock.unlock();
+}
 
-    for (int i = 0; i < num_total_tasks; i++)
+void TaskSystemParallelThreadPoolSleeping::sleepThread()
+{
+    int id;
+    int total;
+    while (true)
     {
-        runnable->runTask(i, num_total_tasks);
+        if (this->killed)
+            break;
+        this->progState->thread_pool_lock->lock();
+        total = this->progState->total_tasks;
+        id = total - this->progState->remaining_tasks;
+        if (id < total)
+            this->progState->remaining_tasks--;
+        this->progState->thread_pool_lock->unlock();
+        if (id < total)
+        {
+            this->progState->runnable->runTask(id, total);
+            this->progState->thread_pool_lock->lock();
+            this->progState->finished_tasks++;
+            if (this->progState->finished_tasks == total)
+            {
+                this->progState->thread_pool_lock->unlock();
+                // lock so we put the main thread to sleep
+                this->progState->finish_lock->lock();
+                this->progState->finish_lock->unlock();
+                this->progState->finish_cv->notify_all();
+            }
+            else
+            {
+                this->progState->thread_pool_lock->unlock();
+            }
+        }
+        else {
+            std::unique_lock<std::mutex> ulock(*this->newTaskLock);
+            this->newTaskCV->wait(ulock);
+            ulock.unlock();
+        }
     }
 }
+
 
 TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable *runnable, int num_total_tasks,
                                                               const std::vector<TaskID> &deps)
