@@ -128,10 +128,6 @@ const char* TaskSystemParallelThreadPoolSpinning::name() {
 void threadTaskSpin(TaskSystemParallelThreadPoolSpinning* task) {
     while (true) {
         lock.lock();
-        if (task->num_tasks_completed == task->num_total_tasks) {
-            //printf("notifying\n");
-            cv.notify_all();
-        }
         if (task->q.empty()) {
             bool done = task->done;
             lock.unlock();
@@ -194,13 +190,9 @@ void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_tota
     }
     lock.unlock();
 
-    while(true) {
+    while(!(this->num_tasks_completed == this->num_total_tasks)) {
         lock.lock();
-        cv.wait(lock);
-        bool done = this->num_tasks_completed == this->num_total_tasks;
-        //printf("done condition checked\n");
         lock.unlock();
-        if (done) break;
     }
     //printf("returning\n");
 
@@ -230,10 +222,6 @@ const char* TaskSystemParallelThreadPoolSleeping::name() {
 void threadTaskSleep(TaskSystemParallelThreadPoolSleeping* task) {
     while (true) {
         lock.lock();
-        if (task->num_tasks_completed == task->num_total_tasks) {
-            //printf("notifying\n");
-            cv.notify_all();
-        }
         while (task->q.empty()) {
             //printf("thread checking done\n");
             if (task->done) {
@@ -251,6 +239,10 @@ void threadTaskSleep(TaskSystemParallelThreadPoolSleeping* task) {
         lock.lock();
         task->num_tasks_completed += 1;
         //printf("num tasks completed is %d\n", task->num_tasks_completed);
+        if (task->num_tasks_completed == task->num_total_tasks) {
+            //printf("notifying\n");
+            cv.notify_all();
+        }
         lock.unlock();
     }
 }
@@ -305,15 +297,15 @@ void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_tota
         this->q.push_back(i);
     }
     cv_thread.notify_all();
-    lock.unlock();
 
     while(true) {
-        lock.lock();
         cv.wait(lock);
         bool done = this->num_tasks_completed == this->num_total_tasks;
         //printf("done condition checked\n");
-        lock.unlock();
-        if (done) break;
+        if (done) {
+            lock.unlock();
+            break;
+        }
     }
     //printf("returning\n");
 }
