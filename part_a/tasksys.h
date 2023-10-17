@@ -2,11 +2,13 @@
 #define _TASKSYS_H
 
 #include "itasksys.h"
+#include <vector>
 #include <thread>
 #include <mutex>
 #include <atomic>
 #include <condition_variable>
 #include <queue>
+#include <iostream>
 
 /*
  * TaskSystemSerial: This class is the student's implementation of a
@@ -46,6 +48,22 @@ class TaskSystemParallelSpawn: public ITaskSystem {
         void sync();
 };
 
+// Common program state object for thread pool to synchronize over
+class ProgramState {
+    public:
+        std::mutex* thread_pool_lock;
+        std::mutex* finish_lock;
+        std::condition_variable* finish_cv;
+        IRunnable* runnable;
+
+        int finished_tasks;
+        int remaining_tasks;
+        int total_tasks;
+
+        ProgramState();
+        ~ProgramState();
+};
+
 /*
  * TaskSystemParallelThreadPoolSpinning: This class is the student's
  * implementation of a parallel task execution engine that uses a
@@ -53,6 +71,12 @@ class TaskSystemParallelSpawn: public ITaskSystem {
  * documentation of the ITaskSystem interface.
  */
 class TaskSystemParallelThreadPoolSpinning: public ITaskSystem {
+    private:
+        bool killed;
+        ProgramState* progState;
+        std::vector<std::thread> thread_pool;
+        int num_threads;
+
     public:
         TaskSystemParallelThreadPoolSpinning(int num_threads);
         ~TaskSystemParallelThreadPoolSpinning();
@@ -60,6 +84,7 @@ class TaskSystemParallelThreadPoolSpinning: public ITaskSystem {
         void run(IRunnable* runnable, int num_total_tasks);
         TaskID runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
                                 const std::vector<TaskID>& deps);
+        void spinningThread();
         void sync();
 };
 
