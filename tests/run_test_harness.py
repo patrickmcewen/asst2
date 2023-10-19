@@ -14,6 +14,7 @@ PERF_THRESHOLD = 1.2
 NUM_TEST_RUNS = 5
 
 LIST_OF_TESTS = [
+    ("recursive_factorial", UNSPECIFIED_NUM_THREADS),
     ("super_super_light", UNSPECIFIED_NUM_THREADS),
     ("super_light", UNSPECIFIED_NUM_THREADS),
     ("ping_pong_equal", UNSPECIFIED_NUM_THREADS),
