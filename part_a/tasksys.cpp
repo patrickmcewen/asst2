@@ -273,18 +273,18 @@ TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping()
     // Implementations are free to add new class member variables
     // (requiring changes to tasksys.h).
     //
-    killed = true;
-    for (int i = 0; i < num_threads; i++) {
-        newTaskCV->notify_all();
-    }
+    this->killed = true;
+    newTaskCV->notify_all();
     for (int i = 0; i < num_threads; i++) {
         thread_pool[i].join();
     }
+    delete progState;
+    delete newTaskCV;
+    delete newTaskLock;
 }
 
 void TaskSystemParallelThreadPoolSleeping::run(IRunnable *runnable, int num_total_tasks)
 {
-
     //
     // TODO: CS149 students will modify the implementation of this
     // method in Parts A and B.  The implementation provided below runs all
@@ -297,9 +297,7 @@ void TaskSystemParallelThreadPoolSleeping::run(IRunnable *runnable, int num_tota
     this->progState->total_tasks = num_total_tasks;
     this->progState->runnable = runnable;
     this->progState->thread_pool_lock->unlock();
-    for (int i = 0; i < num_total_tasks; i++) {
-        this->newTaskCV->notify_all();
-    }
+    this->newTaskCV->notify_all();
     this->progState->finish_cv->wait(ulock);
     ulock.unlock();
 }
@@ -328,8 +326,8 @@ void TaskSystemParallelThreadPoolSleeping::sleepThread()
                 this->progState->thread_pool_lock->unlock();
                 // lock so we put the main thread to sleep
                 this->progState->finish_lock->lock();
-                this->progState->finish_lock->unlock();
                 this->progState->finish_cv->notify_all();
+                this->progState->finish_lock->unlock();
             }
             else
             {
@@ -338,7 +336,7 @@ void TaskSystemParallelThreadPoolSleeping::sleepThread()
         }
         else {
             std::unique_lock<std::mutex> ulock(*this->newTaskLock);
-            this->newTaskCV->wait(ulock);
+            this->newTaskCV->wait(ulock); // if all tasks seem to be allocated, sleep (wait in CV for new tasks)
             ulock.unlock();
         }
     }

@@ -2,6 +2,14 @@
 #define _TASKSYS_H
 
 #include "itasksys.h"
+#include <mutex>
+#include <atomic>
+#include <condition_variable>
+#include <queue>
+#include <iostream>
+#include <map>
+#include <vector>
+#include <thread>
 
 /*
  * TaskSystemSerial: This class is the student's implementation of a
@@ -53,17 +61,39 @@ class TaskSystemParallelThreadPoolSpinning: public ITaskSystem {
         void sync();
 };
 
+
+
+/*
+ * Task
+ */
+
+struct QueueTask {
+};
+
+
 /*
  * TaskSystemParallelThreadPoolSleeping: This class is the student's
  * optimized implementation of a parallel task execution engine that uses
  * a thread pool. See definition of ITaskSystem in
  * itasksys.h for documentation of the ITaskSystem interface.
  */
+
 class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
+    private:
+        this->numThreads = num_threads;
+        this->killed = false;
+        this->completedTaskID = -1;
+        this->nextTaskID = 0;
+        this->wait_lock = new std::mutex();
+        this->ready_lock = new std::mutex();
+        this->program_update_lock = new std::mutex();
+        this->thread_pool = new std::thread[num_threads];
+
     public:
         TaskSystemParallelThreadPoolSleeping(int num_threads);
         ~TaskSystemParallelThreadPoolSleeping();
         const char* name();
+        void sleepingWorkerThread();
         void run(IRunnable* runnable, int num_total_tasks);
         TaskID runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
                                 const std::vector<TaskID>& deps);
