@@ -2,14 +2,19 @@
 #define _TASKSYS_H
 
 #include "itasksys.h"
-#include <mutex>
-#include <atomic>
-#include <condition_variable>
-#include <queue>
-#include <iostream>
-#include <map>
+#include <deque>
 #include <vector>
 #include <thread>
+#include <map>
+#include <set>
+
+struct runnableInfo {
+    IRunnable* runnable;
+    std::set<TaskID> deps;
+    std::vector<TaskID> outgoing_edges;
+    int num_total_tasks;
+    int num_tasks_completed;
+};
 
 /*
  * TaskSystemSerial: This class is the student's implementation of a
@@ -61,43 +66,32 @@ class TaskSystemParallelThreadPoolSpinning: public ITaskSystem {
         void sync();
 };
 
-
-
-/*
- * Task
- */
-
-struct QueueTask {
-};
-
-
 /*
  * TaskSystemParallelThreadPoolSleeping: This class is the student's
  * optimized implementation of a parallel task execution engine that uses
  * a thread pool. See definition of ITaskSystem in
  * itasksys.h for documentation of the ITaskSystem interface.
  */
-
 class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
-    private:
-        this->numThreads = num_threads;
-        this->killed = false;
-        this->completedTaskID = -1;
-        this->nextTaskID = 0;
-        this->wait_lock = new std::mutex();
-        this->ready_lock = new std::mutex();
-        this->program_update_lock = new std::mutex();
-        this->thread_pool = new std::thread[num_threads];
-
     public:
         TaskSystemParallelThreadPoolSleeping(int num_threads);
         ~TaskSystemParallelThreadPoolSleeping();
         const char* name();
-        void sleepingWorkerThread();
         void run(IRunnable* runnable, int num_total_tasks);
         TaskID runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
                                 const std::vector<TaskID>& deps);
         void sync();
+        std::deque<std::pair<int, TaskID>> q;
+        std::map<TaskID, runnableInfo> runnables;
+        bool done;
+        std::set<TaskID> cur_tasks; // Set of current tasks in queue
+        bool waiting_for_sync;
+        bool work_to_add = false;
+        double total_time;
+    private:
+        int num_threads;
+        std::vector<std::thread> threads;
+        TaskID cur_task_id = 0;
 };
 
 #endif
