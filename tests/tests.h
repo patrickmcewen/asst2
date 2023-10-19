@@ -115,7 +115,8 @@ TestResults recursiveFactorialTestBase(ITaskSystem *t, bool do_async)
         std::vector<TaskID> deps; // Call runAsyncWithDeps without dependencies
         for (int i = 0; i < num_bulk_task_launches; i++)
         {
-            t->runAsyncWithDeps(factorial_tasks[i], num_tasks, deps);
+            TaskID curID = t->runAsyncWithDeps(factorial_tasks[i], num_tasks, deps);
+            deps.push_back(curID);
         }
         t->sync();
     }
@@ -881,8 +882,7 @@ TestResults recursiveFibonacciTestBase(ITaskSystem *t, bool do_async)
         std::vector<TaskID> deps; // Call runAsyncWithDeps without dependencies
         for (int i = 0; i < num_bulk_task_launches; i++)
         {
-            TaskID curTaskID = t->runAsyncWithDeps(fib_tasks[i], num_tasks, deps);
-            deps.push_back(curTaskID);
+            t->runAsyncWithDeps(fib_tasks[i], num_tasks, deps);
         }
         t->sync();
     }
