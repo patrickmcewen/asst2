@@ -10,9 +10,10 @@
 
 struct runnableInfo {
     IRunnable* runnable;
-    std::vector<TaskID> deps;
+    std::set<TaskID> deps;
     int num_total_tasks;
     int num_tasks_completed;
+    std::set<TaskID> outgoing;
 };
 
 /*
@@ -84,9 +85,7 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         std::map<TaskID, runnableInfo> runnables;
         bool done;
         std::set<TaskID> cur_tasks; // Set of current tasks in queue
-        std::deque<TaskID> waiting_tasks;
         bool waiting_for_sync;
-        bool work_to_add = false;
         double total_time;
     private:
         int num_threads;
