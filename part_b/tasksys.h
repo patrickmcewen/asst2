@@ -10,10 +10,11 @@
 
 struct runnableInfo {
     IRunnable* runnable;
-    std::set<TaskID> deps;
-    int num_total_tasks;
-    int num_tasks_completed;
-    std::set<TaskID> outgoing;
+    std::vector<TaskID> deps; // shared access
+    int num_total_tasks; // need task_finished_lock
+    int num_tasks_completed; // set at beginning
+    std::set<TaskID> outgoing; // shared access
+    int in_degree;
 };
 
 /*
@@ -87,6 +88,7 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         std::set<TaskID> cur_tasks; // Set of current tasks in queue
         bool waiting_for_sync;
         double total_time;
+        int waiting = 0;
     private:
         int num_threads;
         std::vector<std::thread> threads;

@@ -7,8 +7,7 @@
 #include "CycleTimer.h"
 
 std::mutex lock;
-std::mutex task_finished_lock;
-std::mutex deps_lock;
+std::mutex inc_lock;
 std::condition_variable_any cv;
 std::condition_variable_any cv_thread;
 
@@ -169,18 +168,11 @@ void taskAdd(TaskID task_id, int num_total_tasks, TaskSystemParallelThreadPoolSl
 
 void threadTaskSleep(TaskSystemParallelThreadPoolSleeping *task)
 {
-    std::set<TaskID> add_to_roots;
+    //std::vector<TaskID> add_to_roots;
     while (true)
     {
         lock.lock();
-        if (!add_to_roots.empty())
-        {
-            for (TaskID add_task: add_to_roots) {
-                taskAdd(add_task, task->runnables[add_task].num_total_tasks, task);
-            }
-            cv_thread.notify_all();
-            add_to_roots.clear();
-        }
+
         while (task->q.empty())
         {
             if (task->done)
@@ -188,11 +180,10 @@ void threadTaskSleep(TaskSystemParallelThreadPoolSleeping *task)
                 lock.unlock();
                 return;
             }
-            if (task->q.empty())
-            {
-                //printf("thread waiting for work\n");
-                cv_thread.wait(lock);
-            }
+            //task->waiting++;
+            //printf("thread waiting for work\n");
+            cv_thread.wait(lock);
+            //task->waiting--;
         }
         std::pair<int, TaskID> task_info = task->q.front();
         task->q.pop_front();
@@ -201,28 +192,32 @@ void threadTaskSleep(TaskSystemParallelThreadPoolSleeping *task)
         lock.unlock();
         //printf("thread retrieved task number %d for task id %d\n", cur_task, cur_task_id);
         task->runnables[cur_task_id].runnable->runTask(cur_task, task->runnables[cur_task_id].num_total_tasks);
-        task_finished_lock.lock();
         //printf("task number %d completed for task id %d\n", cur_task, cur_task_id);
+        inc_lock.lock();
         task->runnables[cur_task_id].num_tasks_completed += 1;
         //printf("tasks for id %d completed are %d versus %d total\n", cur_task_id, task->runnables[cur_task_id].num_tasks_completed, task->runnables[cur_task_id].num_total_tasks);
         bool done_with_task = task->runnables[cur_task_id].num_tasks_completed == task->runnables[cur_task_id].num_total_tasks;
+        inc_lock.unlock();
         if (done_with_task)
         {
+            //double start_time = CycleTimer::currentSeconds();
+            lock.lock();
             task->cur_tasks.erase(cur_task_id);
             for (TaskID t: task->runnables[cur_task_id].outgoing) {
-                task->runnables[t].deps.erase(cur_task_id);
-                if (task->runnables[t].deps.empty()) {
-                    add_to_roots.insert(t);
+                if (--task->runnables[t].in_degree == 0) {
+                    taskAdd(t, task->runnables[t].num_total_tasks, task);
+                    cv_thread.notify_all();
                 }
             }
             //printf("erasing task from set\n");
-            if (task->waiting_for_sync && task->q.empty())
+            if (task->waiting_for_sync && task->cur_tasks.empty())
             {
                 //printf("all tasks done for now\n");
                 cv.notify_all();
             }
+            //task->total_time += CycleTimer::currentSeconds() - start_time;
+            lock.unlock();
         }
-        task_finished_lock.unlock();
     }
 }
 
@@ -265,7 +260,7 @@ TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping()
         //printf("joining threads\n");
         this->threads[i].join();
     }
-    //printf("total time spend in addToQueue is %f\n", this->total_time);
+    //printf("total time spent in crit area is %f\n", this->total_time);
 }
 
 void TaskSystemParallelThreadPoolSleeping::run(IRunnable *runnable, int num_total_tasks)
@@ -291,25 +286,24 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable *runnabl
     TaskID task_id = this->cur_task_id;
     this->cur_task_id += 1;
     lock.lock();
-    std::set<TaskID> dependencies;
-    task_finished_lock.lock();
+    int in_degree = 0;
     for (TaskID t: deps) {
         if (this->cur_tasks.count(t)) {
-            dependencies.insert(t);
             this->runnables[t].outgoing.insert(task_id);
+            in_degree++;
         }
     }
     this->cur_tasks.insert(task_id);
-    task_finished_lock.unlock();
     runnableInfo runnable_info = {
         runnable,
-        dependencies,
+        deps,
         num_total_tasks,
         0, 
-        {}
+        {},
+        in_degree
     };
     this->runnables[task_id] = runnable_info;
-    if (dependencies.empty()) {
+    if (!in_degree) {
         //printf("adding to queue from runAsync\n");
         taskAdd(task_id, num_total_tasks, this);
         cv_thread.notify_all();
@@ -326,15 +320,15 @@ void TaskSystemParallelThreadPoolSleeping::sync()
     //
     // TODO: CS149 students will modify the implementation of this method in Part B.
     //
-    task_finished_lock.lock();
+    lock.lock();
     this->waiting_for_sync = true;
     while (!this->cur_tasks.empty())
     {
         //printf("waiting for threads to finish tasks\n");
         // cv_thread.notify_all();
-        cv.wait(task_finished_lock);
+        cv.wait(lock);
     }
     this->waiting_for_sync = false;
-    task_finished_lock.unlock();
+    lock.unlock();
     //printf("threads finished tasks, returning sync\n");
 }
