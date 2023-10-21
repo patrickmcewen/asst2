@@ -298,10 +298,10 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable *runnabl
     for (TaskID dependency: deps) {
         // TODO: Construct adjacency list; get the latest dependency of our current
         // task_id and append our task_id there.
-        this->runnables[dependency].deps.insert(task_id);
+        this->runnables[dependency].outgoing_edges.push_back(task_id);
     }
 
-    std::set<TaskID> dependencies (deps.begin(), deps.end());
+    std::set<TaskID> dependencies (deps.begin(), deps.end()); // Dependencies should only contain adjacent incoming edges
     std::vector<TaskID> outgoing_edges; // Initialize to empty
     runnableInfo runnable_info = {
         runnable,
