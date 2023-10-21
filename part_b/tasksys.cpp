@@ -164,7 +164,6 @@ const char *TaskSystemParallelThreadPoolSleeping::name()
 void addToQueue(std::deque<std::pair<int, TaskID>> &q, TaskSystemParallelThreadPoolSleeping *task, TaskID cur_task_id)
 {
     runnableInfo runnable_info = task->runnables[cur_task_id];
-    bool can_add = true;
     // Add individual tasks from the bulk
     for (int i = 0; i < runnable_info.num_total_tasks; i++)
     {
@@ -189,10 +188,10 @@ void threadTaskSleep(TaskSystemParallelThreadPoolSleeping *task)
             {
                 task->work_to_add = false;
             }
-            if (task->q.empty())
-            {
-                cv_thread.wait(lock);
-            }
+            // if (task->q.empty())
+            // {
+            //     cv_thread.wait(lock);
+            // }
         }
         std::pair<int, TaskID> task_info = task->q.front();
         task->q.pop_front();
@@ -209,6 +208,7 @@ void threadTaskSleep(TaskSystemParallelThreadPoolSleeping *task)
         // of adjacent dependencies and push them to ready queue.
         if (task->runnables[cur_task_id].num_tasks_completed == task->runnables[cur_task_id].num_total_tasks)
         {
+            lock.lock();
             task->cur_tasks.erase(cur_task_id);
             for (TaskID nextTaskID : task->runnables[cur_task_id].outgoing_edges) {
                 runnableInfo next_runnable = task->runnables[nextTaskID];
@@ -220,6 +220,7 @@ void threadTaskSleep(TaskSystemParallelThreadPoolSleeping *task)
                 // There's more work to do IFF there are more nextTaskIDs
                 task->work_to_add = true;
             }
+            lock.unlock();
             cv_thread.notify_all();
             if (task->waiting_for_sync && task->q.empty())
             {
@@ -313,7 +314,6 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable *runnabl
 
     this->runnables[task_id] = runnable_info;
     task_finished_lock.lock();
-
     // Insert into our topological BFS queue
     if (this->cur_tasks.empty() || deps.size() == 0)
     {
